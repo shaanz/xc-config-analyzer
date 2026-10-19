@@ -2,6 +2,7 @@
 conf_info
 apacpoc2-aigwk8s.yaml
 *.kubeconfig
+.env
 data/
 
 # Python

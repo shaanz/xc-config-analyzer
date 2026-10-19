@@ -186,12 +186,29 @@ one. It's a destructive, confirmation-gated action — there's no undo.
 
 ## Running it
 
+Every route except `/health` requires HTTP Basic Auth, read from
+`BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD` — **there is no file in this
+repo that holds them**, on purpose (it's public). Both are required; the app
+fails closed (`503`) on every other route if either is unset. Copy
+`.env.example` to `.env` (already git-ignored) as a reminder of the two names,
+then actually supply the values however fits your setup:
+
 ```bash
-python3 app.py                 # dev server on :5000
-# or
+# Local dev server
+BASIC_AUTH_USERNAME=youruser BASIC_AUTH_PASSWORD=yourpass python3 app.py   # :5000
+
+# Docker
 docker build -t xc-config-analyzer .
-docker run -p 5093:5000 -v "$PWD/data:/app/data" xc-config-analyzer
+docker run -p 5093:5000 -v "$PWD/data:/app/data" \
+  -e BASIC_AUTH_USERNAME=youruser -e BASIC_AUTH_PASSWORD=yourpass \
+  xc-config-analyzer
+# or: docker run --env-file .env ... (if you filled in .env)
+
+# Kubernetes — create the Secret directly in the cluster, never in a file:
+kubectl create secret generic xc-config-analyzer-auth -n <namespace> \
+  --from-literal=username=youruser --from-literal=password=yourpass
+# kubernetes-deployment.yaml references it by name (secretKeyRef) only.
 ```
 
 Settings (tenant URL/token, LLM endpoint/model/key) are entered through the
-web UI at `/config` — there's no environment-variable path for them.
+web UI at `/config` instead — there's no environment-variable path for those.
