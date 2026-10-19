@@ -3,6 +3,7 @@ import secrets
 import threading
 import time
 
+from dotenv import load_dotenv
 from flask import Flask, Response, redirect, render_template, request, url_for
 
 import config_store
@@ -10,6 +11,8 @@ import exporters
 import security_fields
 from llm_analyzer import LLMAnalyzerError, analyze_load_balancer, list_models, test_connection
 from xc_client import XCClient, XCError
+
+load_dotenv()  # loads .env into the process env if present; no-op otherwise
 
 app = Flask(__name__)
 

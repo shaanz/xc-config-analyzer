@@ -187,28 +187,45 @@ one. It's a destructive, confirmation-gated action — there's no undo.
 ## Running it
 
 Every route except `/health` requires HTTP Basic Auth, read from
-`BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD` — **there is no file in this
-repo that holds them**, on purpose (it's public). Both are required; the app
-fails closed (`503`) on every other route if either is unset. Copy
-`.env.example` to `.env` (already git-ignored) as a reminder of the two names,
-then actually supply the values however fits your setup:
+`BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD`. **There is no file in this repo
+that holds real values for them** — it's public — but `.env` is the actual,
+working mechanism for supplying them locally. Both are required; the app
+fails closed (`503`) on every other route if either is unset.
+
+### 1. Create your `.env`
 
 ```bash
-# Local dev server
-BASIC_AUTH_USERNAME=youruser BASIC_AUTH_PASSWORD=yourpass python3 app.py   # :5000
+cp .env.example .env
+# then edit .env and fill in both values:
+#   BASIC_AUTH_USERNAME=youruser
+#   BASIC_AUTH_PASSWORD=yourpass
+```
 
-# Docker
+`.env` is already in `.gitignore` — it never gets committed, so your real
+credentials stay local. This is the one file a fresh clone is expected to
+create for itself; nothing else in the repo substitutes for it.
+
+### 2. Run it
+
+```bash
+# Local dev server — app.py calls load_dotenv() on startup, so a .env
+# file next to it is picked up automatically. No export needed.
+python3 app.py   # :5000
+
+# Docker — pass the .env file straight through:
 docker build -t xc-config-analyzer .
 docker run -p 5093:5000 -v "$PWD/data:/app/data" \
-  -e BASIC_AUTH_USERNAME=youruser -e BASIC_AUTH_PASSWORD=yourpass \
+  --env-file .env \
   xc-config-analyzer
-# or: docker run --env-file .env ... (if you filled in .env)
+# (or skip .env and pass -e BASIC_AUTH_USERNAME=... -e BASIC_AUTH_PASSWORD=... directly)
 
-# Kubernetes — create the Secret directly in the cluster, never in a file:
+# Kubernetes — .env doesn't reach the cluster; create the Secret directly
+# instead, with the same two values you put in .env:
 kubectl create secret generic xc-config-analyzer-auth -n <namespace> \
   --from-literal=username=youruser --from-literal=password=yourpass
 # kubernetes-deployment.yaml references it by name (secretKeyRef) only.
 ```
 
 Settings (tenant URL/token, LLM endpoint/model/key) are entered through the
-web UI at `/config` instead — there's no environment-variable path for those.
+web UI at `/config` instead — there's no `.env`/environment-variable path for
+those, only for Basic Auth.
