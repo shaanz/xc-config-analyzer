@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set active = "config" %}
+{% block title %}Settings — F5 XC Security Config Analyzer{% endblock %}
+{% block content %}
+<div class="wrap narrow">
+  <h1>Settings</h1>
+  <p class="page-subtitle">Connect your F5 Distributed Cloud tenant and an OpenAI-compatible LLM endpoint for the AI analysis pass.</p>
+
+  {% if notice %}<div class="alert alert-success">{{ notice }}</div>{% endif %}
+
+  <div class="card">
+    <h2>F5 Distributed Cloud tenant</h2>
+    <p class="section-sub">Used to list namespaces and pull load balancer / app firewall configuration.</p>
+
+    {% if f5_test_result %}
+    <div class="alert {{ 'alert-success' if f5_test_result.ok else 'alert-error' }}">{{ f5_test_result.message }}</div>
+    {% endif %}
+
+    <form id="f5-form" action="{{ url_for('save_config') }}" method="post" data-loading-text="Saving…">
+      <div class="field-group">
+        <label for="f5_tenant_url">Tenant URL</label>
+        <input type="text" id="f5_tenant_url" name="f5_tenant_url" value="{{ cfg.f5_tenant_url }}" placeholder="https://your-tenant.console.ves.volterra.io">
+      </div>
+      <div class="field-group">
+        <label for="f5_api_token">API token</label>
+        <input type="password" id="f5_api_token" name="f5_api_token" placeholder="{% if masked_f5_token %}{{ masked_f5_token }} (leave blank to keep){% else %}paste your F5 XC API token{% endif %}" autocomplete="off">
+        <p class="hint">Sent as <span class="mono">Authorization: APIToken &lt;token&gt;</span>. {% if masked_f5_token %}Leave blank to keep the saved token.{% endif %}</p>
+      </div>
+      <div class="row">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="submit" formaction="{{ url_for('test_f5') }}" class="btn btn-secondary" data-loading-text="Testing F5 XC connection…">Test connection</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>AI model (OpenAI-compatible)</h2>
+    <p class="section-sub">Any endpoint that speaks the OpenAI chat-completions API — a hosted provider, or a private/self-hosted gateway (e.g. a local Ollama/vLLM/Bifrost endpoint).</p>
+
+    {% if llm_test_result %}
+    <div class="alert {{ 'alert-success' if llm_test_result.ok else 'alert-error' }}">{{ llm_test_result.message }}</div>
+    {% endif %}
+
+    <form id="llm-form" action="{{ url_for('save_config') }}" method="post" data-loading-text="Saving…">
+      <div class="field-group">
+        <label for="llm_base_url">Endpoint base URL</label>
+        <input type="text" id="llm_base_url" name="llm_base_url" value="{{ cfg.llm_base_url }}" placeholder="https://api.openai.com/v1 or http://host.docker.internal:11434/v1">
+        <p class="hint"><span class="mono">/chat/completions</span> and <span class="mono">/models</span> are appended automatically.</p>
+      </div>
+      <div class="field-group">
+        <label for="llm_api_key">API key</label>
+        <input type="password" id="llm_api_key" name="llm_api_key" placeholder="{% if masked_llm_key %}{{ masked_llm_key }} (leave blank to keep){% else %}any non-empty value works for endpoints that don't check it{% endif %}" autocomplete="off">
+        <p class="hint">Required field even for providers like Ollama that don't validate it — any placeholder text works. {% if masked_llm_key %}Leave blank to keep the saved key.{% endif %}</p>
+      </div>
+      <div class="field-group">
+        <label for="llm_model">Model</label>
+        {% if available_models %}
+        <select id="llm_model" name="llm_model">
+          {% for m in available_models %}
+          <option value="{{ m }}" {% if m == cfg.llm_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        <p class="hint">{{ available_models|length }} model(s) fetched from the endpoint. Fetch again after changing the endpoint/key above.</p>
+        {% else %}
+        <input type="text" id="llm_model" name="llm_model" value="{{ cfg.llm_model }}" placeholder="gpt-4o-mini, qwen3.8:latest, etc.">
+        <p class="hint">Type a model id, or fetch the list below (needs a working endpoint + key).</p>
+        {% endif %}
+      </div>
+      <div class="row">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="submit" formaction="{{ url_for('test_llm') }}" class="btn btn-secondary" data-loading-text="Testing AI connection…">Test connection</button>
+        <button type="submit" formaction="{{ url_for('fetch_models') }}" class="btn btn-secondary" data-loading-text="Fetching available models…">Fetch available models</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card danger-zone">
+    <h2>Danger zone</h2>
+    <p class="section-sub">Clears the saved tenant/LLM settings above and drops everything currently loaded on the Analyze page (inventory, AI results). Use this before pointing the tool at a different tenant.</p>
+    <form action="{{ url_for('reset_all') }}" method="post" data-loading-text="Wiping settings and loaded data…">
+      <button
+        type="submit"
+        class="btn btn-danger"
+        onclick="return confirm('Clear all saved settings and loaded data? This cannot be undone.');"
+      >Clean config &amp; wipe all data</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

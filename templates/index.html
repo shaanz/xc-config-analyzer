@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% set active = "home" %}
+{% block content %}
+<div class="wrap">
+  <h1>Load balancer security config review</h1>
+  <p class="page-subtitle">Pick a namespace (or all of them), pull every HTTP load balancer's security configuration from F5 Distributed Cloud, and have an AI model flag what's missing or risky.</p>
+
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert alert-success">{{ notice }}</div>{% endif %}
+
+  {% if ai_job and ai_job.running %}
+  <div class="card ai-job-banner">
+    <div class="card-header">
+      <div>
+        <h2>✨ AI analysis running in the background</h2>
+        <p class="section-sub">{{ ai_job.done }}/{{ ai_job.total }} done{% if ai_job.current %} — currently: {{ ai_job.current }}{% endif %}. Reload this page anytime to check progress; everything else here stays usable while it works.</p>
+      </div>
+      <form action="{{ url_for('analyze_ai_cancel') }}" method="post">
+        <button type="submit" class="btn btn-secondary">Stop</button>
+      </form>
+    </div>
+    <div class="bar-track"><div class="bar-fill status-good" style="width: {{ (ai_job.done / ai_job.total * 100) if ai_job.total else 0 }}%;"></div></div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header"><h2>Load inventory</h2></div>
+    {% if namespaces_error %}
+    <div class="alert alert-error">Could not list namespaces: {{ namespaces_error }}</div>
+    {% elif not has_f5_config %}
+    <p class="section-sub">No F5 XC tenant configured yet — <a href="{{ url_for('config_screen') }}">add the tenant URL and API token in Settings</a> first.</p>
+    {% else %}
+    <form action="{{ url_for('load') }}" method="post" data-loading-text="Loading inventory from F5 XC…">
+      <div class="row">
+        <div class="field-group">
+          <label for="namespace">Namespace</label>
+          <select id="namespace" name="namespace">
+            <option value="__ALL__" {% if selected_namespace == '__ALL__' %}selected{% endif %}>All namespaces</option>
+            {% for ns in namespaces %}
+            <option value="{{ ns }}" {% if selected_namespace == ns %}selected{% endif %}>{{ ns }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Load load balancers</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if load_balancers %}
+  <div class="stats">
+    <div class="stat-tile">
+      <div class="stat-label">Load balancers loaded</div>
+      <div class="stat-value">{{ load_balancers|length }}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Namespace scope</div>
+      <div class="stat-value" style="font-size:16px;">{{ 'All namespaces' if selected_namespace == '__ALL__' else selected_namespace }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Feature coverage</h2>
+    <p class="section-sub">Share of the {{ load_balancers|length }} loaded load balancer(s) with each security feature configured — worst-covered first.</p>
+    <div class="barchart">
+      {% for item in feature_coverage %}
+      <div class="bar-row" title="{{ item.count }} of {{ item.total }} load balancer(s) ({{ item.pct }}%)">
+        <div class="bar-label">{{ item.label }}</div>
+        <div class="bar-track"><div class="bar-fill status-{{ item.status }}" style="width: {{ item.pct }}%;"></div></div>
+        <div class="bar-value">{{ item.count }}/{{ item.total }} · {{ item.pct }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>AI health score</h2>
+    {% if health_scores %}
+    <p class="section-sub">Each AI-analysed load balancer's overall risk verdict turned into a 0-100 score (critical=10 … good=100), rolled up per app, per namespace, and for the tenant. Based on the {{ health_scores.tenant.count }} load balancer(s) analysed with AI so far — not the full {{ load_balancers|length }} loaded.</p>
+
+    <div class="bar-row" style="margin-bottom:18px;">
+      <div class="bar-label-row">
+        <div class="bar-label">Tenant-wide</div>
+        <span class="info-icon" tabindex="0">i<span class="info-tooltip">{{ health_scores.tenant.reasoning }}</span></span>
+      </div>
+      <div class="bar-track"><div class="bar-fill status-{{ health_scores.tenant.status }}" style="width: {{ health_scores.tenant.score }}%;"></div></div>
+      <div class="bar-value">{{ health_scores.tenant.score }}</div>
+    </div>
+
+    <p class="section-sub" style="margin-bottom:8px; font-weight:700; color:var(--text-primary);">Per namespace</p>
+    <div class="barchart" style="margin-bottom:18px;">
+      {% for ns in health_scores.namespaces %}
+      <div class="bar-row">
+        <div class="bar-label-row">
+          <div class="bar-label">{{ ns.label }}</div>
+          <span class="info-icon" tabindex="0">i<span class="info-tooltip">{{ ns.reasoning }}</span></span>
+        </div>
+        <div class="bar-track"><div class="bar-fill status-{{ ns.status }}" style="width: {{ ns.score }}%;"></div></div>
+        <div class="bar-value">{{ ns.score }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <p class="section-sub" style="margin-bottom:8px; font-weight:700; color:var(--text-primary);">Per app</p>
+    <div class="barchart">
+      {% for app in health_scores.apps %}
+      <div class="bar-row">
+        <div class="bar-label-row">
+          <div class="bar-label">{{ app.label }}</div>
+          <span class="info-icon" tabindex="0">i<span class="info-tooltip">{{ app.reasoning }}</span></span>
+        </div>
+        <div class="bar-track"><div class="bar-fill status-{{ app.status }}" style="width: {{ app.score }}%;"></div></div>
+        <div class="bar-value">{{ app.score }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No AI analysis yet — run "Analyse with AI" on at least one load balancer to see health scores.</div>
+    {% endif %}
+  </div>
+
+  <div class="toolbar">
+    <form action="{{ url_for('analyze_ai_all') }}" method="post" data-loading-text="Starting AI analysis…">
+      <button type="submit" class="btn btn-ai" {% if not has_llm_config or ai_job.running %}disabled{% endif %}>✨ Analyse all with AI</button>
+    </form>
+    <a class="btn btn-secondary" href="{{ url_for('export_csv') }}">⬇ Export CSV</a>
+    <a class="btn btn-secondary" href="{{ url_for('export_json') }}">⬇ Download raw JSON</a>
+    {% if not has_llm_config %}<span class="hint">No AI endpoint configured yet — <a href="{{ url_for('config_screen') }}">add one in Settings</a>.</span>{% endif %}
+    {% if ai_job.running %}<span class="hint">Running in the background — reload to refresh progress.</span>{% endif %}
+  </div>
+
+  {% for lb in load_balancers %}
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="lb-ns">{{ lb.namespace }}</div>
+        <div class="lb-title">{{ lb.name }}</div>
+        {% if lb.domains %}<div class="lb-domains">{{ lb.domains|join(', ') }}</div>{% endif %}
+      </div>
+      <form action="{{ url_for('analyze_ai_one', namespace=lb.namespace, name=lb.name) }}" method="post" data-loading-text="Analysing {{ lb.name }} with AI…">
+        <button type="submit" class="btn btn-ai small" {% if not has_llm_config or ai_job.running %}disabled{% endif %}>✨ Analyse with AI</button>
+      </form>
+    </div>
+
+    {% if lb.ai %}
+      {% if lb.ai.error %}
+      <div class="alert alert-error">{{ lb.ai.error }}</div>
+      {% elif lb.ai.summary %}
+      <p class="ai-summary"><strong>AI summary ({{ lb.ai.overall_risk }} risk):</strong> {{ lb.ai.summary }}</p>
+      {% endif %}
+    {% endif %}
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Security Feature</th>
+            <th class="nowrap">Status</th>
+            <th>Configured Value</th>
+            {% if lb.ai and not lb.ai.error %}<th class="nowrap">AI Verdict</th><th>AI Note</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, item in lb.profile.items() %}
+          <tr>
+            <td class="nowrap">{{ item.label }}</td>
+            <td class="nowrap"><span class="badge {{ item.status }}">{{ item.status }}</span></td>
+            <td class="wrap-cell mono">{{ item.value if item.value is not none else '-' }}</td>
+            {% if lb.ai and not lb.ai.error %}
+            <td class="nowrap">{% if item.ai_verdict %}<span class="badge {{ item.ai_verdict }}">{{ item.ai_verdict }}</span>{% endif %}</td>
+            <td class="wrap-cell">{{ item.ai_note or '' }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+  {% elif has_f5_config and not namespaces_error %}
+  <div class="empty-state">No load balancers loaded yet — pick a namespace above and click "Load load balancers".</div>
+  {% endif %}
+</div>
+{% endblock %}

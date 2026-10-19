@@ -1,0 +1,13 @@
+# Secrets / credentials — never commit
+conf_info
+apacpoc2-aigwk8s.yaml
+*.kubeconfig
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}F5 XC Security Config Analyzer{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-brand">
+    <span>🛡️</span>
+    <span class="nav-title">F5 XC Security Config Analyzer</span>
+  </div>
+  <div class="nav-links">
+    <a class="nav-link {% if active == 'home' %}active{% endif %}" href="{{ url_for('index') }}">Analyze</a>
+    <a class="nav-link {% if active == 'config' %}active{% endif %}" href="{{ url_for('config_screen') }}">Settings</a>
+    {% if has_f5_config is not none %}
+      <span class="pill {% if has_f5_config %}on{% else %}off{% endif %}">{% if has_f5_config %}F5 XC configured{% else %}F5 XC not configured{% endif %}</span>
+    {% endif %}
+    {% if has_llm_config is not none %}
+      <span class="pill {% if has_llm_config %}on{% else %}off{% endif %}">{% if has_llm_config %}AI configured{% else %}AI not configured{% endif %}</span>
+    {% endif %}
+  </div>
+</nav>
+{% block content %}{% endblock %}
+
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Working…</div>
+  </div>
+</div>
+<script>
+  // Any form marked data-loading-text shows the overlay immediately on submit
+  // and disables its submit button, so a full-page POST (load inventory, AI
+  // analysis, settings test) gives feedback for however long it takes rather
+  // than leaving the page looking frozen. The overlay is dismissed by the
+  // next page load, so a failed/cancelled navigation can't leave it stuck.
+  document.querySelectorAll("form[data-loading-text]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const text = event.submitter?.dataset.loadingText || form.dataset.loadingText;
+      document.getElementById("loading-text").textContent = text;
+      document.getElementById("loading-overlay").classList.add("active");
+      form.querySelectorAll("button[type=submit]").forEach((btn) => { btn.disabled = true; });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xc-config-analyzer-data
+  namespace: ai-gw
+  labels:
+    app: xc-config-analyzer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xc-config-analyzer
+  namespace: ai-gw
+  labels:
+    app: xc-config-analyzer
+    tier: backend
+spec:
+  # Analysis results and AI verdicts live in single-process memory (gunicorn
+  # --workers 1 in the image), and settings persist to a file on the PVC
+  # below. Both only work correctly with exactly one running pod.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: xc-config-analyzer
+  template:
+    metadata:
+      labels:
+        app: xc-config-analyzer
+        tier: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      containers:
+      - name: xc-config-analyzer
+        image: sbacker/xc-config-analyzer:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        # Every route except /health requires HTTP Basic Auth (app.py fails
+        # closed if these are unset). Kept out of this file on purpose — it's
+        # public; create the Secret yourself once per cluster:
+        #   kubectl create secret generic xc-config-analyzer-auth -n ai-gw \
+        #     --from-literal=username=<your-username> \
+        #     --from-literal=password=<your-password>
+        - name: BASIC_AUTH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: xc-config-analyzer-auth
+              key: username
+        - name: BASIC_AUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: xc-config-analyzer-auth
+              key: password
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        # /health is intentionally exempt from Basic Auth: kubelet's probe
+        # httpHeaders only accept literal strings, not Secret references, so
+        # authenticating it would mean committing the credential to this
+        # (public) file. It only reveals liveness, not app data.
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 999
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: xc-config-analyzer-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xc-config-analyzer-service
+  namespace: ai-gw
+  labels:
+    app: xc-config-analyzer
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: xc-config-analyzer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 5000
+    protocol: TCP
